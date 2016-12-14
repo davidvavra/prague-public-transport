@@ -54,13 +54,17 @@ class WebHook : HttpServlet() {
     }
 
     private fun queryChaps(tramNumber: String? = null, timeFrom: String? = null, numberOfTrams: Int = 2): ChapsResponse {
-        val OFFSET_MINUTES = 4
+        val OFFSET_MINUTES = 5
         val nowPlusOffset = DateTime.now(timezone).plusMinutes(OFFSET_MINUTES)
         var dateTime = timeFrom
         if (timeFrom.isNullOrEmpty()) {
             dateTime = chapsDateTimeFormat.print(nowPlusOffset).replace(" ", "%20")
         }
-        val responseString = download("https://ext.crws.cz/api/ABCz/departures?from=loc%3A%2050%2C108167%3B%2014%2C485774&remMask=0&ttInfoDetails=0&typeId=3&ttDetails=4128&lang=1&maxCount=$numberOfTrams&dateTime=$dateTime")
+        var url = "https://ext.crws.cz/api/ABCz/departures?from=loc%3A%2050%2C108167%3B%2014%2C485774&remMask=0&ttInfoDetails=0&typeId=3&ttDetails=4128&lang=1&maxCount=$numberOfTrams&dateTime=$dateTime"
+        if (tramNumber != null) {
+            url += "&line=$tramNumber"
+        }
+        val responseString = download(url)
         return gson.fromJson(responseString, ChapsResponse::class.java)
     }
 
