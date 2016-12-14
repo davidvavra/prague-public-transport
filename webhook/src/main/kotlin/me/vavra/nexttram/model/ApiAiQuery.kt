@@ -7,9 +7,18 @@ class ApiAiQuery {
     lateinit var result: Result
     class Result {
         lateinit var parameters: Parameters
+
         class Parameters {
             val number: String? = null
             val time: String? = null
+
+            override fun toString(): String {
+                return "Parameters(number=$number, time=$time)"
+            }
+        }
+
+        override fun toString(): String {
+            return "Result(parameters=$parameters)"
         }
     }
 
@@ -19,5 +28,9 @@ class ApiAiQuery {
 
     fun getTimeFrom(): String? {
         return result.parameters.time
+    }
+
+    override fun toString(): String {
+        return "ApiAiQuery(result=$result)"
     }
 }
