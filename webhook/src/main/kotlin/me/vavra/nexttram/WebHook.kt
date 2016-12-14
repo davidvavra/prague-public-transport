@@ -9,10 +9,6 @@ import org.joda.time.DateTime
 import org.joda.time.DateTimeZone
 import org.joda.time.Minutes
 import org.joda.time.format.DateTimeFormat
-import java.io.InputStream
-import java.net.HttpURLConnection
-import java.net.URL
-import java.util.logging.Logger
 import javax.servlet.http.HttpServlet
 import javax.servlet.http.HttpServletRequest
 import javax.servlet.http.HttpServletResponse
@@ -24,31 +20,48 @@ import javax.servlet.http.HttpServletResponse
  */
 class WebHook : HttpServlet() {
 
-    private val log = Logger.getLogger(WebHook::class.java.name)
     private val timezone = DateTimeZone.forID("Europe/Prague")
     private val chapsDateTimeFormat = DateTimeFormat.forPattern("dd.MM.yyyy HH:mm").withZone(timezone)
+    private val gson = Gson()
 
     override fun doGet(request: HttpServletRequest, response: HttpServletResponse) {
         response.writer.println("This is a webhook for NextTram app")
     }
 
     override fun doPost(request: HttpServletRequest, response: HttpServletResponse) {
-        val gson = Gson()
         val apiAiQuery = gson.fromJson(request.inputStream.readToString(), ApiAiQuery::class.java)
-        val chapsResponseString = queryChaps(apiAiQuery.getTramNumber(), apiAiQuery.getTimeFrom())
-        val chapsResponse = gson.fromJson(chapsResponseString, ChapsResponse::class.java)
-        val speech = convertToSpeech(chapsResponse)
-        response.ok(gson, speech)
+        when (apiAiQuery.getAction()) {
+            "first-query" -> firstQuery(response)
+            "detailed-query" -> detailedQuery(response, apiAiQuery.getTramNumber(), apiAiQuery.getTimeFrom())
+            else -> response.ok("")
+        }
     }
 
-    private fun queryChaps(tramNumber: String?, timeFrom: String?, numberOfTrams: Int = 2): String? {
+    private fun firstQuery(response: HttpServletResponse) {
+        val chapsResponse = queryChaps()
+        var speech = convertToSpeech(chapsResponse)
+        val followUp = listOf("Are you satisfied?", "Is that all for you?", "Is that enough?", "Did you find out what you need?")
+        speech += "\n\n" + followUp.randomElement()
+        response.ok(speech)
+    }
+
+    private fun detailedQuery(response: HttpServletResponse, tramNumber: String?, timeFrom: String?) {
+        val chapsResponse = queryChaps(tramNumber, timeFrom)
+        var speech = convertToSpeech(chapsResponse)
+        val followUp = listOf("Good bye!", "Have a nice day!", "See you later, aligator!", "Bye!")
+        speech += "\n\n" + followUp.randomElement()
+        response.ok(speech)
+    }
+
+    private fun queryChaps(tramNumber: String? = null, timeFrom: String? = null, numberOfTrams: Int = 2): ChapsResponse {
         val OFFSET_MINUTES = 4
         val nowPlusOffset = DateTime.now(timezone).plusMinutes(OFFSET_MINUTES)
         var dateTime = timeFrom
         if (timeFrom.isNullOrEmpty()) {
             dateTime = chapsDateTimeFormat.print(nowPlusOffset).replace(" ", "%20")
         }
-        return download("https://ext.crws.cz/api/ABCz/departures?from=loc%3A%2050%2C108167%3B%2014%2C485774&remMask=0&ttInfoDetails=0&typeId=3&ttDetails=4128&lang=1&maxCount=$numberOfTrams&dateTime=$dateTime")
+        val responseString = download("https://ext.crws.cz/api/ABCz/departures?from=loc%3A%2050%2C108167%3B%2014%2C485774&remMask=0&ttInfoDetails=0&typeId=3&ttDetails=4128&lang=1&maxCount=$numberOfTrams&dateTime=$dateTime")
+        return gson.fromJson(responseString, ChapsResponse::class.java)
     }
 
     private fun convertToSpeech(chapsResponse: ChapsResponse, numberOfTrams: Int = 2): String {
@@ -66,33 +79,13 @@ class WebHook : HttpServlet() {
                 speech += ".\n"
             }
         }
-        speech += "\n\n Would you like a specific tram or a different time?"
         return speech
     }
 
-    private fun download(url: String): String? {
-        val connection = URL(url).openConnection() as HttpURLConnection
-        val respCode = connection.responseCode
-        if (respCode == HttpURLConnection.HTTP_OK) {
-            return connection.inputStream.readToString()
-        }
-        return null
-    }
-
-    private fun InputStream.readToString(): String {
-        val response = IOUtils.toString(this, "UTF-8")
-        IOUtils.closeQuietly(this)
-        return response
-    }
-
-    private fun HttpServletResponse.ok(gson: Gson, speech: String) {
+    private fun HttpServletResponse.ok(speech: String) {
         this.addHeader("Content-type", "application/json")
         IOUtils.write(gson.toJson(ApiAiResponse(speech)), this.outputStream, "UTF-8")
         IOUtils.closeQuietly(this.outputStream)
-    }
-
-    private fun l(what: Any?) {
-        log.warning(what.toString())
     }
 
     private fun String.toEnglishPronunciation(): String {
@@ -102,3 +95,4 @@ class WebHook : HttpServlet() {
         return newString
     }
 }
+

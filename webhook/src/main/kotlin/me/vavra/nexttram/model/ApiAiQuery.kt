@@ -7,6 +7,7 @@ class ApiAiQuery {
     lateinit var result: Result
     class Result {
         lateinit var parameters: Parameters
+        lateinit var action: String
 
         class Parameters {
             val number: String? = null
@@ -28,6 +29,10 @@ class ApiAiQuery {
 
     fun getTimeFrom(): String? {
         return result.parameters.time
+    }
+
+    fun getAction(): String {
+        return result.action
     }
 
     override fun toString(): String {
