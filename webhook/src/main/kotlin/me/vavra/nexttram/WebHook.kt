@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import me.vavra.nexttram.model.ApiAiQuery
 import me.vavra.nexttram.model.ApiAiResponse
 import me.vavra.nexttram.model.ChapsResponse
+import me.vavra.nexttram.model.LocationPermissionResponse
 import org.apache.commons.io.IOUtils
 import org.joda.time.DateTime
 import org.joda.time.DateTimeZone
@@ -30,37 +31,55 @@ class WebHook : HttpServlet() {
 
     override fun doPost(request: HttpServletRequest, response: HttpServletResponse) {
         val apiAiQuery = gson.fromJson(request.inputStream.readToString(), ApiAiQuery::class.java)
+        l("action=${apiAiQuery.getAction()}")
         when (apiAiQuery.getAction()) {
-            "first-query" -> firstQuery(response)
-            "detailed-query" -> detailedQuery(response, apiAiQuery.getTramNumber(), apiAiQuery.getTimeFrom())
+            "first-query" -> {
+                val location = Datastore.getUserLocation(apiAiQuery.getUserId())
+                if (location == null) {
+                    response.permissionRequest()
+                } else {
+                    firstQuery(location, response)
+                }
+            }
+            "save-location" -> {
+                val location = apiAiQuery.getLocation()
+                if (location == null) {
+                    response.permissionRequest()
+                } else {
+                    Datastore.saveUserLocation(apiAiQuery.getUserId(), location)
+                    firstQuery(location, response)
+                }
+            }
+            "detailed-query" -> detailedQuery(apiAiQuery.getUserId(), response, apiAiQuery.getTramNumber(), apiAiQuery.getTimeFrom())
             else -> response.ok("")
         }
     }
 
-    private fun firstQuery(response: HttpServletResponse) {
-        val chapsResponse = queryChaps()
+    private fun firstQuery(location: String, response: HttpServletResponse) {
+        val chapsResponse = queryChaps(location)
         var speech = convertToSpeech(chapsResponse)
         val followUp = listOf("Are you satisfied?", "Is that all for you?", "Is that enough?", "Did you find out what you need?")
-        speech += "\n\n" + followUp.randomElement()
+        speech += followUp.randomElement()
         response.ok(speech)
     }
 
-    private fun detailedQuery(response: HttpServletResponse, tramNumber: String?, timeFrom: String?) {
-        val chapsResponse = queryChaps(tramNumber, timeFrom)
+    private fun detailedQuery(location: String, response: HttpServletResponse, tramNumber: String?, timeFrom: String?) {
+        val chapsResponse = queryChaps(location, tramNumber, timeFrom)
         var speech = convertToSpeech(chapsResponse)
         val followUp = listOf("Good bye!", "Have a nice day!", "See you later, aligator!", "Bye!")
-        speech += "\n\n" + followUp.randomElement()
+        speech += followUp.randomElement()
         response.ok(speech)
     }
 
-    private fun queryChaps(tramNumber: String? = null, timeFrom: String? = null, numberOfTrams: Int = 2): ChapsResponse {
+    private fun queryChaps(location: String, tramNumber: String? = null, timeFrom: String? = null, numberOfTrams: Int = 2): ChapsResponse {
         val OFFSET_MINUTES = 5
         val nowPlusOffset = DateTime.now(timezone).plusMinutes(OFFSET_MINUTES)
         var dateTime = timeFrom
         if (timeFrom.isNullOrEmpty()) {
-            dateTime = chapsDateTimeFormat.print(nowPlusOffset).replace(" ", "%20")
+            dateTime = chapsDateTimeFormat.print(nowPlusOffset).urlEncode()
         }
-        var url = "https://ext.crws.cz/api/ABCz/departures?from=loc%3A%2050%2C108167%3B%2014%2C485774&remMask=0&ttInfoDetails=0&typeId=3&ttDetails=4128&lang=1&maxCount=$numberOfTrams&dateTime=$dateTime"
+        val latlng = location.urlEncode()
+        var url = "https://ext.crws.cz/api/ABCz/departures?from=$latlng&remMask=0&ttInfoDetails=0&typeId=3&ttDetails=4128&lang=1&maxCount=$numberOfTrams&dateTime=$dateTime"
         if (tramNumber != null) {
             url += "&line=$tramNumber"
         }
@@ -89,6 +108,14 @@ class WebHook : HttpServlet() {
     private fun HttpServletResponse.ok(speech: String) {
         this.addHeader("Content-type", "application/json")
         IOUtils.write(gson.toJson(ApiAiResponse(speech)), this.outputStream, "UTF-8")
+        IOUtils.closeQuietly(this.outputStream)
+    }
+
+    private fun HttpServletResponse.permissionRequest() {
+        this.addHeader("Content-type", "application/json")
+        val json = gson.toJson(LocationPermissionResponse())
+        l(json)
+        IOUtils.write(json, this.outputStream, "UTF-8")
         IOUtils.closeQuietly(this.outputStream)
     }
 

@@ -5,6 +5,7 @@ import org.apache.commons.lang3.RandomUtils
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.util.logging.Logger
 
 /**
@@ -32,4 +33,8 @@ fun l(what: Any?) {
 
 fun <E> List<E>.randomElement(): E? {
     return this[RandomUtils.nextInt(0, this.size)]
+}
+
+fun String.urlEncode(): String {
+    return URLEncoder.encode(this, "UTF-8")
 }
