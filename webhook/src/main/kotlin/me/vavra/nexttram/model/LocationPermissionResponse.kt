@@ -6,7 +6,7 @@ package me.vavra.nexttram.model
 class LocationPermissionResponse {
     val data = Data()
     val speech = "Location"
-    val contextOut = listOf("requesting_permission")
+    val contextOut = listOf(Context())
     class Data {
         val google = Google()
         class Google {
@@ -16,5 +16,8 @@ class LocationPermissionResponse {
                 val permissions = listOf("DEVICE_PRECISE_LOCATION")
             }
         }
+    }
+    class Context {
+        val name = "requesting_permission"
     }
 }
