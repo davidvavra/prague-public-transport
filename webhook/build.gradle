@@ -2,7 +2,7 @@ group 'vavra.me'
 version '1.0-SNAPSHOT'
 
 buildscript {
-    ext.kotlin_version = '1.0.5-2'
+    ext.kotlin_version = '1.0.5-3'
     ext.appengine_version = '1.9.48'
 
     repositories {

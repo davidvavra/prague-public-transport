@@ -30,23 +30,21 @@ class WebHook : HttpServlet() {
     }
 
     override fun doPost(request: HttpServletRequest, response: HttpServletResponse) {
-        val apiAiQuery = gson.fromJson(request.inputStream.readToString(), ApiAiQuery::class.java)
-        l("action=${apiAiQuery.getAction()}")
+        val json = request.inputStream.readToString()
+        l("json=$json")
+        val apiAiQuery = gson.fromJson(json, ApiAiQuery::class.java)
         when (apiAiQuery.getAction()) {
             "first-query" -> {
-                val location = Datastore.getUserLocation(apiAiQuery.getUserId())
+                var location = Datastore.getUserLocation(apiAiQuery.getUserId())
                 if (location == null) {
-                    response.permissionRequest()
+                    location = apiAiQuery.getLocation()
+                    if (location == null) {
+                        response.permissionRequest()
+                    } else {
+                        Datastore.saveUserLocation(apiAiQuery.getUserId(), location)
+                        firstQuery(location, response)
+                    }
                 } else {
-                    firstQuery(location, response)
-                }
-            }
-            "save-location" -> {
-                val location = apiAiQuery.getLocation()
-                if (location == null) {
-                    response.permissionRequest()
-                } else {
-                    Datastore.saveUserLocation(apiAiQuery.getUserId(), location)
                     firstQuery(location, response)
                 }
             }

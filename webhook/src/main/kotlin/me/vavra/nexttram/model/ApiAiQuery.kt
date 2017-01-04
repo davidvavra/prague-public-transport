@@ -29,17 +29,34 @@ class ApiAiQuery {
             lateinit var user: User
             class User {
                 lateinit var user_id: String
-                var current_location: CurrentLocation? = null
-                class CurrentLocation {
-                    lateinit var latlng: LatLng
-                    class LatLng {
+            }
+            var device: Device? = null
+            class Device {
+                var location: Location? = null
+                class Location {
+                    lateinit var coordinates: Coordinates
+                    class Coordinates {
                         var latitude: Double = 0.0
                         var longitude: Double = 0.0
+
+                        override fun toString(): String {
+                            return "Coordinates(latitude=$latitude, longitude=$longitude)"
+                        }
                     }
                 }
             }
+
+            override fun toString(): String {
+                return "Data(user=$user)"
+            }
+        }
+
+        override fun toString(): String {
+            return "OriginalRequest(data=$data)"
         }
     }
+
+
 
     fun getTramNumber(): String? {
         return result.parameters.number
@@ -58,11 +75,11 @@ class ApiAiQuery {
     }
 
     fun getLocation(): String? {
-        val latlng = originalRequest.data.user.current_location?.latlng
-        if (latlng == null) {
+        val coordinates = originalRequest.data.device?.location?.coordinates
+        if (coordinates == null) {
             return null
         } else {
-            return "loc: ${latlng.latitude.convertToCzech()}; ${latlng.longitude.convertToCzech()}"
+            return "loc: ${coordinates.latitude.convertToCzech()}; ${coordinates.longitude.convertToCzech()}"
         }
     }
 
@@ -71,6 +88,6 @@ class ApiAiQuery {
     }
 
     override fun toString(): String {
-        return "ApiAiQuery(result=$result)"
+        return "ApiAiQuery(result=$result, originalRequest=$originalRequest)"
     }
 }
