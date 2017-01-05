@@ -4,7 +4,7 @@ package me.vavra.nexttram.model
  * Response from CHAPS API.
  */
 class ChapsResponse {
-    lateinit var trains: List<Train>
+    var trains: List<Train>? = null
 
     class Train {
         lateinit var train: Tram

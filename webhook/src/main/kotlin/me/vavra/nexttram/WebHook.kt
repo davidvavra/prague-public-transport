@@ -31,7 +31,6 @@ class WebHook : HttpServlet() {
 
     override fun doPost(request: HttpServletRequest, response: HttpServletResponse) {
         val json = request.inputStream.readToString()
-        l("json=$json")
         val apiAiQuery = gson.fromJson(json, ApiAiQuery::class.java)
         when (apiAiQuery.getAction()) {
             "first-query" -> {
@@ -56,15 +55,15 @@ class WebHook : HttpServlet() {
     private fun firstQuery(location: String, response: HttpServletResponse) {
         val chapsResponse = queryChaps(location)
         var speech = convertToSpeech(chapsResponse)
-        val followUp = listOf("Are you satisfied?", "Is that all for you?", "Is that enough?", "Did you find out what you need?")
+        val followUp = listOf("Do you want to be more specific or finish?", "Would you like a more specific tram or stop?")
         speech += followUp.randomElement()
         response.ok(speech)
     }
 
-    private fun detailedQuery(location: String, response: HttpServletResponse, tramNumber: String?, timeFrom: String?) {
-        val chapsResponse = queryChaps(location, tramNumber, timeFrom)
+    private fun detailedQuery(userId: String, response: HttpServletResponse, tramNumber: String?, timeFrom: String?) {
+        val chapsResponse = queryChaps(Datastore.getUserLocation(userId)!!, tramNumber, timeFrom) // Location was set in first query to datastore
         var speech = convertToSpeech(chapsResponse)
-        val followUp = listOf("Good bye!", "Have a nice day!", "See you later, aligator!", "Bye!")
+        val followUp = listOf("Good bye!", "Have a nice day!", "See you later, alligator!", "Bye!")
         speech += followUp.randomElement()
         response.ok(speech)
     }
@@ -76,8 +75,8 @@ class WebHook : HttpServlet() {
         if (timeFrom.isNullOrEmpty()) {
             dateTime = chapsDateTimeFormat.print(nowPlusOffset).urlEncode()
         }
-        val latlng = location.urlEncode()
-        var url = "https://ext.crws.cz/api/ABCz/departures?from=$latlng&remMask=0&ttInfoDetails=0&typeId=3&ttDetails=4128&lang=1&maxCount=$numberOfTrams&dateTime=$dateTime"
+        val coordinates = location.urlEncode()
+        var url = "https://ext.crws.cz/api/ABCz/departures?from=$coordinates&remMask=0&ttInfoDetails=0&typeId=3&ttDetails=4128&lang=1&maxCount=$numberOfTrams&dateTime=$dateTime"
         if (tramNumber != null) {
             url += "&line=$tramNumber"
         }
@@ -86,14 +85,14 @@ class WebHook : HttpServlet() {
     }
 
     private fun convertToSpeech(chapsResponse: ChapsResponse, numberOfTrams: Int = 2): String {
+        if (chapsResponse.trains == null) {
+            return "I could not find any trams around your location."
+        }
         var speech = ""
-        val trams = chapsResponse.trains.take(numberOfTrams)
+        val trams = chapsResponse.trains!!.take(numberOfTrams) // We have done the null check.
         trams.forEachIndexed { i, tram ->
-            val departure = DateTime.parse(tram.dateTime1, chapsDateTimeFormat)
-            val now = DateTime.now(timezone)
-            val minuteDifference = Minutes.minutesBetween(now, departure).minutes
             val direction = tram.stationTrainEnd.name.toEnglishPronunciation()
-            speech += "Tram number ${tram.train.num1} direction '$direction' leaves in $minuteDifference minutes"
+            speech += "Tram number ${tram.train.num1} direction '$direction' leaves "+ timeToSpeech(tram.dateTime1)
             if (i == trams.size - 2) {
                 speech += " and "
             } else {
@@ -101,6 +100,18 @@ class WebHook : HttpServlet() {
             }
         }
         return speech
+    }
+
+    private fun timeToSpeech(departure: String): String {
+        val date = DateTime.parse(departure, chapsDateTimeFormat)
+        val now = DateTime.now(timezone)
+        val minuteDifference = Minutes.minutesBetween(now, date).minutes
+        if (minuteDifference > 30) {
+            val pattern = DateTimeFormat.forPattern("H:mm").withZone(timezone)
+            return "at "+pattern.print(date)
+        } else {
+            return "in $minuteDifference minutes"
+        }
     }
 
     private fun HttpServletResponse.ok(speech: String) {
@@ -112,7 +123,6 @@ class WebHook : HttpServlet() {
     private fun HttpServletResponse.permissionRequest() {
         this.addHeader("Content-type", "application/json")
         val json = gson.toJson(LocationPermissionResponse())
-        l(json)
         IOUtils.write(json, this.outputStream, "UTF-8")
         IOUtils.closeQuietly(this.outputStream)
     }
