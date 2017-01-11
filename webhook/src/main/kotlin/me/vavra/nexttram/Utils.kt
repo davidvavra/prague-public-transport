@@ -31,7 +31,7 @@ fun l(what: Any?) {
     Logger.getLogger(WebHook::class.java.name).warning(what.toString())
 }
 
-fun <E> List<E>.randomElement(): E? {
+fun <E> List<E>.randomElement(): E {
     return this[RandomUtils.nextInt(0, this.size)]
 }
 

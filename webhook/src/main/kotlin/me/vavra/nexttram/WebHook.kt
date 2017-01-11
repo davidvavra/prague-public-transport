@@ -26,38 +26,36 @@ class WebHook : HttpServlet() {
     private val gson = Gson()
 
     override fun doGet(request: HttpServletRequest, response: HttpServletResponse) {
-        response.writer.println("This is a webhook for NextTram app")
+        response.writer.println("This is a webhook for Czech Public Transport app")
     }
 
     override fun doPost(request: HttpServletRequest, response: HttpServletResponse) {
         val json = request.inputStream.readToString()
         val apiAiQuery = gson.fromJson(json, ApiAiQuery::class.java)
+        l("action=" + apiAiQuery.getAction())
+        l("location="+ apiAiQuery.getLocation())
         when (apiAiQuery.getAction()) {
-            "first-query" -> {
-                var location = Datastore.getUserLocation(apiAiQuery.getUserId())
+            "welcome" -> {
+                val location = Datastore.getUserLocation(apiAiQuery.getUserId())
                 if (location == null) {
-                    location = apiAiQuery.getLocation()
-                    if (location == null) {
-                        response.permissionRequest()
-                    } else {
-                        Datastore.saveUserLocation(apiAiQuery.getUserId(), location)
-                        firstQuery(location, response)
-                    }
+                    response.permissionRequest()
                 } else {
-                    firstQuery(location, response)
+                    welcomeResponse(response)
                 }
             }
             "detailed-query" -> detailedQuery(apiAiQuery.getUserId(), response, apiAiQuery.getTramNumber(), apiAiQuery.getTimeFrom())
-            else -> response.ok("")
+            "permission-granted" -> {
+                val location = apiAiQuery.getLocation()
+                Datastore.saveUserLocation(apiAiQuery.getUserId(), location)
+                welcomeResponse(response)
+            }
+            else -> response.ok("Unknown command" + apiAiQuery.getAction())
         }
     }
 
-    private fun firstQuery(location: String, response: HttpServletResponse) {
-        val chapsResponse = queryChaps(location)
-        var speech = convertToSpeech(chapsResponse)
-        val followUp = listOf("Do you want to be more specific or finish?", "Would you like a more specific tram or stop?")
-        speech += followUp.randomElement()
-        response.ok(speech)
+    private fun welcomeResponse(response: HttpServletResponse) {
+        val followUp = listOf("Hi! When would you like to go?", "Welcome! What time would you like to leave?")
+        response.ok(followUp.randomElement())
     }
 
     private fun detailedQuery(userId: String, response: HttpServletResponse, tramNumber: String?, timeFrom: String?) {
@@ -92,7 +90,7 @@ class WebHook : HttpServlet() {
         val trams = chapsResponse.trains!!.take(numberOfTrams) // We have done the null check.
         trams.forEachIndexed { i, tram ->
             val direction = tram.stationTrainEnd.name.toEnglishPronunciation()
-            speech += "Tram number ${tram.train.num1} direction '$direction' leaves "+ timeToSpeech(tram.dateTime1)
+            speech += "Tram number ${tram.train.num1} direction '$direction' leaves " + timeToSpeech(tram.dateTime1)
             if (i == trams.size - 2) {
                 speech += " and "
             } else {
@@ -108,7 +106,7 @@ class WebHook : HttpServlet() {
         val minuteDifference = Minutes.minutesBetween(now, date).minutes
         if (minuteDifference > 30) {
             val pattern = DateTimeFormat.forPattern("H:mm").withZone(timezone)
-            return "at "+pattern.print(date)
+            return "at " + pattern.print(date)
         } else {
             return "in $minuteDifference minutes"
         }
@@ -116,13 +114,16 @@ class WebHook : HttpServlet() {
 
     private fun HttpServletResponse.ok(speech: String) {
         this.addHeader("Content-type", "application/json")
-        IOUtils.write(gson.toJson(ApiAiResponse(speech)), this.outputStream, "UTF-8")
+        val json = gson.toJson(ApiAiResponse(speech))
+        l(json)
+        IOUtils.write(json, this.outputStream, "UTF-8")
         IOUtils.closeQuietly(this.outputStream)
     }
 
     private fun HttpServletResponse.permissionRequest() {
         this.addHeader("Content-type", "application/json")
         val json = gson.toJson(LocationPermissionResponse())
+        l(json)
         IOUtils.write(json, this.outputStream, "UTF-8")
         IOUtils.closeQuietly(this.outputStream)
     }
