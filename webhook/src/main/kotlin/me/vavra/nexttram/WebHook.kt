@@ -26,7 +26,7 @@ class WebHook : HttpServlet() {
     private val gson = Gson()
 
     override fun doGet(request: HttpServletRequest, response: HttpServletResponse) {
-        response.writer.println("This is a webhook for Czech Public Transport app")
+        response.writer.println("This is a webhook for Prague Public Transport app")
     }
 
     override fun doPost(request: HttpServletRequest, response: HttpServletResponse) {
@@ -46,10 +46,19 @@ class WebHook : HttpServlet() {
             "detailed-query" -> detailedQuery(apiAiQuery.getUserId(), response, apiAiQuery.getTramNumber(), apiAiQuery.getTimeFrom())
             "permission-granted" -> {
                 val location = apiAiQuery.getLocation()
-                Datastore.saveUserLocation(apiAiQuery.getUserId(), location)
-                welcomeResponse(response)
+                if (location == null) {
+                    val savedLocation = Datastore.getUserLocation(apiAiQuery.getUserId())
+                    if (savedLocation == null) {
+                        response.error("I need your location for showing you nearby tram stops. If you changed your mind, try again. Bye.")
+                    } else {
+                        welcomeResponse(response)
+                    }
+                } else {
+                    Datastore.saveUserLocation(apiAiQuery.getUserId(), location)
+                    welcomeResponse(response)
+                }
             }
-            else -> response.ok("Unknown command" + apiAiQuery.getAction())
+            else -> response.error("Unknown command" + apiAiQuery.getAction())
         }
     }
 
@@ -60,10 +69,13 @@ class WebHook : HttpServlet() {
 
     private fun detailedQuery(userId: String, response: HttpServletResponse, tramNumber: String?, timeFrom: String?) {
         val chapsResponse = queryChaps(Datastore.getUserLocation(userId)!!, tramNumber, timeFrom) // Location was set in first query to datastore
-        var speech = convertToSpeech(chapsResponse)
-        val followUp = listOf("Good bye!", "Have a nice day!", "See you later, alligator!", "Bye!")
-        speech += followUp.randomElement()
-        response.ok(speech)
+        if (chapsResponse.trains == null) {
+            response.error("I could not find any tram stops around your location. Bye")
+        } else {
+            val speech = convertToOutput(chapsResponse, true)
+            val displayText = convertToOutput(chapsResponse, false)
+            response.ok(speech, displayText)
+        }
     }
 
     private fun queryChaps(location: String, tramNumber: String? = null, timeFrom: String? = null, numberOfTrams: Int = 2): ChapsResponse {
@@ -82,14 +94,11 @@ class WebHook : HttpServlet() {
         return gson.fromJson(responseString, ChapsResponse::class.java)
     }
 
-    private fun convertToSpeech(chapsResponse: ChapsResponse, numberOfTrams: Int = 2): String {
-        if (chapsResponse.trains == null) {
-            return "I could not find any trams around your location."
-        }
+    private fun convertToOutput(chapsResponse: ChapsResponse, spoken: Boolean, numberOfTrams: Int = 2): String {
         var speech = ""
         val trams = chapsResponse.trains!!.take(numberOfTrams) // We have done the null check.
         trams.forEachIndexed { i, tram ->
-            val direction = tram.stationTrainEnd.name.toEnglishPronunciation()
+            val direction = if (spoken) tram.stationTrainEnd.name.toEnglishPronunciation() else tram.stationTrainEnd.name
             speech += "Tram number ${tram.train.num1} direction '$direction' leaves " + timeToSpeech(tram.dateTime1)
             if (i == trams.size - 2) {
                 speech += " and "
@@ -97,6 +106,8 @@ class WebHook : HttpServlet() {
                 speech += ".\n"
             }
         }
+        val followUp = listOf("Good bye!", "Have a nice day!", "See you later, alligator!", "Bye!")
+        speech += followUp.randomElement()
         return speech
     }
 
@@ -112,20 +123,31 @@ class WebHook : HttpServlet() {
         }
     }
 
-    private fun HttpServletResponse.ok(speech: String) {
-        this.addHeader("Content-type", "application/json")
-        val json = gson.toJson(ApiAiResponse(speech))
-        l(json)
-        IOUtils.write(json, this.outputStream, "UTF-8")
-        IOUtils.closeQuietly(this.outputStream)
+    private fun HttpServletResponse.ok(speech: String, displayText: String? = null) {
+        var text = speech
+        if (displayText != null) {
+            text = displayText
+        }
+        val response = ApiAiResponse(speech, text)
+        sendResponse(this, response)
+    }
+
+    private fun HttpServletResponse.error(speech: String) {
+        val response = ApiAiResponse(speech, speech)
+        response.data.google.expect_user_response = false
+        sendResponse(this, response)
     }
 
     private fun HttpServletResponse.permissionRequest() {
-        this.addHeader("Content-type", "application/json")
-        val json = gson.toJson(LocationPermissionResponse())
+        sendResponse(this, LocationPermissionResponse())
+    }
+
+    private fun sendResponse(httpResponse: HttpServletResponse, response: Any) {
+        httpResponse.addHeader("Content-type", "application/json")
+        val json = gson.toJson(response)
         l(json)
-        IOUtils.write(json, this.outputStream, "UTF-8")
-        IOUtils.closeQuietly(this.outputStream)
+        IOUtils.write(json, httpResponse.outputStream, "UTF-8")
+        IOUtils.closeQuietly(httpResponse.outputStream)
     }
 
     private fun String.toEnglishPronunciation(): String {
