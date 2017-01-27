@@ -1,6 +1,6 @@
 Privacy policy
 ==============
-Next tram is a very simple app for knowing about next trams in Prague, Czech Republic around your location. It's open-source and non-profit. The app comes with no guarantees about functionality.
+This is a very simple app for knowing about next trams in Prague, Czech Republic around your location. It's open-source and non-profit. The app comes with no guarantees about functionality.
 
 What information do I collect?
 ------------------------------
@@ -12,4 +12,4 @@ I use user's location to show nearby trams. The location is saved on my server f
 
 What information do I share?
 ----------------------------
-I share location of the user with data provider (Chaps s.r.o). But the shared location is anonymous, it's not linked with the user in any way.
+I share location of the user with data provider (CHAPS s.r.o). But the shared location is anonymous, it's not linked with the user in any way.
