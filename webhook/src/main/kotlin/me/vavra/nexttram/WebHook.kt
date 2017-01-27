@@ -1,6 +1,7 @@
 package me.vavra.nexttram
 
 import com.google.gson.Gson
+import com.google.gson.GsonBuilder
 import me.vavra.nexttram.model.ApiAiQuery
 import me.vavra.nexttram.model.ApiAiResponse
 import me.vavra.nexttram.model.ChapsResponse
@@ -23,7 +24,11 @@ class WebHook : HttpServlet() {
 
     private val timezone = DateTimeZone.forID("Europe/Prague")
     private val chapsDateTimeFormat = DateTimeFormat.forPattern("dd.MM.yyyy HH:mm").withZone(timezone)
-    private val gson = Gson()
+    private var gson: Gson
+
+    init {
+        gson = GsonBuilder().disableHtmlEscaping().create()
+    }
 
     override fun doGet(request: HttpServletRequest, response: HttpServletResponse) {
         response.writer.println("This is a webhook for Prague Public Transport app")
@@ -32,8 +37,6 @@ class WebHook : HttpServlet() {
     override fun doPost(request: HttpServletRequest, response: HttpServletResponse) {
         val json = request.inputStream.readToString()
         val apiAiQuery = gson.fromJson(json, ApiAiQuery::class.java)
-        l("action=" + apiAiQuery.getAction())
-        l("location="+ apiAiQuery.getLocation())
         when (apiAiQuery.getAction()) {
             "welcome" -> {
                 val location = Datastore.getUserLocation(apiAiQuery.getUserId())
@@ -72,9 +75,8 @@ class WebHook : HttpServlet() {
         if (chapsResponse.trains == null) {
             response.error("I could not find any tram stops around your location. Bye")
         } else {
-            val speech = convertToOutput(chapsResponse, true)
-            val displayText = convertToOutput(chapsResponse, false)
-            response.ok(speech, displayText)
+            val speech = convertToOutput(chapsResponse)
+            response.ok(speech, true /* finish conversation */, true /* SSML */)
         }
     }
 
@@ -94,46 +96,46 @@ class WebHook : HttpServlet() {
         return gson.fromJson(responseString, ChapsResponse::class.java)
     }
 
-    private fun convertToOutput(chapsResponse: ChapsResponse, spoken: Boolean, numberOfTrams: Int = 2): String {
-        var speech = ""
+    private fun convertToOutput(chapsResponse: ChapsResponse, numberOfTrams: Int = 2): String {
+        var speech = "<speak>"
         val trams = chapsResponse.trains!!.take(numberOfTrams) // We have done the null check.
         trams.forEachIndexed { i, tram ->
-            val direction = if (spoken) tram.stationTrainEnd.name.toEnglishPronunciation() else tram.stationTrainEnd.name
-            speech += "Tram number ${tram.train.num1} direction '$direction' leaves " + timeToSpeech(tram.dateTime1)
-            if (i == trams.size - 2) {
-                speech += " and "
-            } else {
-                speech += ".\n"
-            }
+            val direction = tram.stationTrainEnd.name.toEnglishPronunciation()
+            speech += "<s>Tram number ${tram.train.num1} direction '$direction' leaves " + timeToSpeech(tram.dateTime1)+".</s>"
         }
         val followUp = listOf("Good bye!", "Have a nice day!", "See you later, alligator!", "Bye!")
-        speech += followUp.randomElement()
+        speech += "<s>" + followUp.randomElement() + "</s></speak>"
         return speech
+    }
+
+    private fun String.toEnglishPronunciation(): String {
+        val map = mapOf("á" to "aa", "c" to "ts", "č" to "tch", "é" to "ai", "y" to "i", "ě" to "ye", "í" to "ee", "j" to "y", "ó" to "oo", "ř" to "rg", "š" to "sh", "ú" to "oo", "ů" to "oo", "ý" to "ee", "ž" to "zh")
+        var newString = this.toLowerCase()
+        map.entries.forEach { newString = newString.replace(it.key, it.value) }
+        return newString
     }
 
     private fun timeToSpeech(departure: String): String {
         val date = DateTime.parse(departure, chapsDateTimeFormat)
         val now = DateTime.now(timezone)
-        val minuteDifference = Minutes.minutesBetween(now, date).minutes
-        if (minuteDifference > 30) {
+        val minuteDifference = Minutes.minutesBetween(now, date).minutes + 1
+        if (minuteDifference > 30 || minuteDifference < 0) {
             val pattern = DateTimeFormat.forPattern("H:mm").withZone(timezone)
-            return "at " + pattern.print(date)
+            return "at <say-as interpret-as=\"time\" format=\"hm24\">" + pattern.print(date) + "</say-as>"
         } else {
             return "in $minuteDifference minutes"
         }
     }
 
-    private fun HttpServletResponse.ok(speech: String, displayText: String? = null) {
-        var text = speech
-        if (displayText != null) {
-            text = displayText
-        }
-        val response = ApiAiResponse(speech, text)
+    private fun HttpServletResponse.ok(speech: String, finishConversation: Boolean = false, ssml: Boolean = false) {
+        val response = ApiAiResponse(speech)
+        response.data.google.expect_user_response = !finishConversation
+        response.data.google.is_ssml = ssml
         sendResponse(this, response)
     }
 
     private fun HttpServletResponse.error(speech: String) {
-        val response = ApiAiResponse(speech, speech)
+        val response = ApiAiResponse(speech)
         response.data.google.expect_user_response = false
         sendResponse(this, response)
     }
@@ -145,16 +147,8 @@ class WebHook : HttpServlet() {
     private fun sendResponse(httpResponse: HttpServletResponse, response: Any) {
         httpResponse.addHeader("Content-type", "application/json")
         val json = gson.toJson(response)
-        l(json)
         IOUtils.write(json, httpResponse.outputStream, "UTF-8")
         IOUtils.closeQuietly(httpResponse.outputStream)
-    }
-
-    private fun String.toEnglishPronunciation(): String {
-        val map = mapOf("á" to "aa", "c" to "ts", "č" to "tch", "é" to "ai", "y" to "i", "ě" to "ye", "í" to "ee", "j" to "y", "ó" to "oo", "ř" to "rg", "š" to "sh", "ú" to "oo", "ů" to "oo", "ý" to "ee", "ž" to "zh")
-        var newString = this.toLowerCase()
-        map.entries.forEach { newString = newString.replace(it.key, it.value) }
-        return newString
     }
 }
 
