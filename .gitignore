@@ -1,3 +1,4 @@
 .idea
 .gradle
 build
+webhook/src/main/webapp/WEB-INF/classes/config.properties

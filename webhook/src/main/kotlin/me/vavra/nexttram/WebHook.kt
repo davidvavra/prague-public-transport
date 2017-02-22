@@ -89,8 +89,12 @@ class WebHook : HttpServlet() {
         }
         val coordinates = location.urlEncode()
         var url = "https://ext.crws.cz/api/ABCz/departures?from=$coordinates&remMask=0&ttInfoDetails=0&typeId=3&ttDetails=4128&lang=1&maxCount=$numberOfTrams&dateTime=$dateTime"
-        if (tramNumber != null) {
+        if (!tramNumber.isNullOrEmpty()) {
             url += "&line=$tramNumber"
+        }
+        val userId = getProperty(this.javaClass, "chapsUserId")
+        if (!userId.isNullOrEmpty()) {
+            url += "&userId=$userId"
         }
         val responseString = download(url)
         return gson.fromJson(responseString, ChapsResponse::class.java)

@@ -6,6 +6,7 @@ import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.util.*
 import java.util.logging.Logger
 
 /**
@@ -25,6 +26,12 @@ fun InputStream.readToString(): String {
     val response = IOUtils.toString(this, "UTF-8")
     IOUtils.closeQuietly(this)
     return response
+}
+
+fun getProperty(javaClass: Class<Any>, propertyName: String): String? {
+    val props = Properties()
+    props.load(javaClass.classLoader.getResourceAsStream("config.properties"))
+    return props.getProperty(propertyName)
 }
 
 fun l(what: Any?) {
